@@ -19,6 +19,8 @@ MPHRevConsole.exe <autoconvert_coinname> <currency> <MPH_API>
 
 *example:* MPHRevConsole.exe litecoin USD <APIKey>
 
+The table will update every 30 minutes with a new entry, or just rerun whenever you want a live view.
+
 # How earnings are caluclated
 Your last 24h earnings are calculated by taking the amount you've earned in your auto-convert-to coin for the past 24h and then adding in your current coins waiting to be exchanged (confirmed and unconfirmed).
 
