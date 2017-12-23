@@ -76,7 +76,7 @@ namespace MPH_Rev
             var autoCoin = args[0];
             var currencySymbol = args[1];
             string apiKey = args[2];
-            int waitTimeMinutes = 1;
+            int waitTimeMinutes = 30;
 
             var coins = CreateCoins(autoCoin);
 
