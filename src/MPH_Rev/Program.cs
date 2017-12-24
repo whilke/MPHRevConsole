@@ -1,6 +1,8 @@
 ﻿using Deedle;
 using Newtonsoft.Json;
 using RestSharp;
+using SimpleLogger;
+using SimpleLogger.Logging.Handlers;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -58,6 +60,8 @@ namespace MPH_Rev
     {
         static void Main(string[] args)
         {
+            Logger.LoggerHandlerManager.AddHandler(new FileLoggerHandler("log.txt"));
+
             Console.WriteLine("Tip jar");
             Console.WriteLine("BTC: 1tfZDwHYQiKVfXNJzY1339uTquiknmsq7");
             Console.WriteLine("BCH: 1657vgUNN2f7PzY1s9jcVrAY5NpCT2MyLt");
@@ -82,30 +86,36 @@ namespace MPH_Rev
 
             Console.WriteLine("Last 24 hour earnings | Currency | Timestamp");
 
-            while(true)
+            try
             {
-                double total24hEarnings = 0d;
-                foreach (var coin in coins)
+                while (true)
                 {
-                    var d = Calc24hEarnings(coin.Name, apiKey, coin.isConverted);
-                    if (d > 0d)
+                    double total24hEarnings = 0d;
+                    foreach (var coin in coins)
                     {
-                        d = ConvertToCurrency(d, coin.Symbol, currencySymbol);
+                        var d = Calc24hEarnings(coin.Name, apiKey, coin.isConverted);
+                        if (d > 0d)
+                        {
+                            d = ConvertToCurrency(d, coin.Symbol, currencySymbol);
+                        }
+                        total24hEarnings += d;
                     }
-                    total24hEarnings += d;
+
+                    total24hEarnings = RoundEarnings(total24hEarnings);
+
+                    Console.WriteLine($"{total24hEarnings,21} | {currencySymbol,8} | {DateTime.Now.ToString()}");
+
+                    Thread.Sleep(1000 * 60 * waitTimeMinutes);
                 }
-
-                total24hEarnings = RoundEarnings(total24hEarnings);
-
-                Console.WriteLine($"{total24hEarnings,21} | {currencySymbol,8} | {DateTime.Now.ToString()}");
-
-                Thread.Sleep(1000 * 60 * waitTimeMinutes);
-
             }
-
-
+            catch (Exception e)
+            {
+                Logger.Log("Program Error: " + e);
+                Console.WriteLine("Program error, check log.txt file for details");
+                Console.WriteLine("Press any key to exit...");
+                Console.ReadKey();
+            }
         }
-
 
         static List<CoinEntry> CreateCoins(string autoConvertCoin)
         {
@@ -152,7 +162,6 @@ namespace MPH_Rev
 
         }
 
-
         private static double RoundEarnings(double d)
         {
             if (d < 1d)
@@ -167,45 +176,78 @@ namespace MPH_Rev
         private static double ConvertToCurrency(double d, string symbol, string outSymbol)
         {
             var prices = GetPriceInfo(symbol, outSymbol);
-            return double.Parse(prices[outSymbol]) * d;
+            if (prices == null)
+            {
+                Logger.Log($"Can't get price info {symbol} | {outSymbol}");
+                return 0d;
+            }
+
+            try
+            {
+                return double.Parse(prices[outSymbol]) * d;
+            }
+            catch(Exception e)
+            {
+                Logger.Log("Error converting to currency for " + symbol + " | " + outSymbol);
+                foreach(var price in prices)
+                {
+                    Logger.Log(price.Key + "=>" + price.Value);
+                }
+                Logger.Log(e);
+                throw;
+            }
         }
 
         static double Calc24hEarnings(string coinName, string apiKey, bool autoConvert = false)
         {
-            RestClient client = new RestClient($"https://{coinName}.miningpoolhub.com");
-            RestRequest req = new RestRequest("index.php", Method.GET);
-            req.RequestFormat = DataFormat.Json;
-            req.AddQueryParameter("page", "api");
-            req.AddQueryParameter("action", "getdashboarddata");
-            req.AddQueryParameter("api_key", apiKey);
-            var res = client.Execute(req);
-
-            if (res.IsSuccessful)
+            string rawContent = "";
+            try
             {
-                var data = JsonConvert.DeserializeObject<MPHWrapper>(res.Content);
+                RestClient client = new RestClient($"https://{coinName}.miningpoolhub.com");
+                RestRequest req = new RestRequest("index.php", Method.GET);
+                req.RequestFormat = DataFormat.Json;
+                req.AddQueryParameter("page", "api");
+                req.AddQueryParameter("action", "getdashboarddata");
+                req.AddQueryParameter("api_key", apiKey);
+                var res = client.Execute(req);
 
-
-                if (autoConvert)
+                if (res.IsSuccessful)
                 {
-                    return data.getdashboarddata.data.recent_credits_24hours.amount;
+                    rawContent = res.Content;
+                    var data = JsonConvert.DeserializeObject<MPHWrapper>(res.Content);
+
+
+                    if (autoConvert)
+                    {
+                        return data.getdashboarddata.data.recent_credits_24hours.amount;
+                    }
+                    else
+                    {
+                        double bal_on_exh = 0d;
+                        double.TryParse(data.getdashboarddata.data.balance_on_exchange, out bal_on_exh);
+                        return bal_on_exh
+                            + data.getdashboarddata.data.balance_for_auto_exchange.confirmed
+                            + data.getdashboarddata.data.balance_for_auto_exchange.unconfirmed;
+                    }
                 }
                 else
                 {
-                    double bal_on_exh = 0d;
-                    double.TryParse(data.getdashboarddata.data.balance_on_exchange, out bal_on_exh);
-                    return bal_on_exh
-                        + data.getdashboarddata.data.balance_for_auto_exchange.confirmed
-                        + data.getdashboarddata.data.balance_for_auto_exchange.unconfirmed;
+                    Logger.Log("Error retrieving stats for " + coinName);
+                    Logger.Log("ReturnCode " + res.StatusCode);
                 }
 
+                return 0d;
             }
-
-            return 0d;
+            catch(Exception e)
+            {
+                Logger.Log("Error retrieving stats for " + coinName);
+                Logger.Log("RawContent: " + rawContent);
+                throw;
+            }
         }
 
         static Dictionary<string, string> GetPriceInfo(string inputSym, string outputSym)
         {
-
             RestClient client = new RestClient("https://min-api.cryptocompare.com");
             var req = new RestRequest("data/price", Method.GET);
             req.RequestFormat = DataFormat.Json;
@@ -217,6 +259,10 @@ namespace MPH_Rev
             {
                 var data = JsonConvert.DeserializeObject<Dictionary<string, string>>(res.Content);
                 return data;
+            }
+            else
+            {
+                Logger.Log("error retrieving price info | " + inputSym + " | " + outputSym);
             }
             return null;
         }
