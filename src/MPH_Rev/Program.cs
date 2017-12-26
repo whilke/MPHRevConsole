@@ -6,6 +6,7 @@ using SimpleLogger.Logging.Handlers;
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 
@@ -184,7 +185,7 @@ namespace MPH_Rev
 
             try
             {
-                return double.Parse(prices[outSymbol]) * d;
+                return double.Parse(prices[outSymbol], CultureInfo.CreateSpecificCulture("en-US").NumberFormat) * d;
             }
             catch(Exception e)
             {
@@ -224,7 +225,10 @@ namespace MPH_Rev
                     else
                     {
                         double bal_on_exh = 0d;
-                        double.TryParse(data.getdashboarddata.data.balance_on_exchange, out bal_on_exh);
+                        double.TryParse(data.getdashboarddata.data.balance_on_exchange,
+                            NumberStyles.Currency,
+                            CultureInfo.CreateSpecificCulture("en-US").NumberFormat,
+                            out bal_on_exh);
                         return bal_on_exh
                             + data.getdashboarddata.data.balance_for_auto_exchange.confirmed
                             + data.getdashboarddata.data.balance_for_auto_exchange.unconfirmed;
